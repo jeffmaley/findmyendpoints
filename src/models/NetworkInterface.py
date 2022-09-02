@@ -8,4 +8,5 @@ class NetworkInterface(object):
         self.id = id
         self.instance_name = None
         self.instance_id = None
-
+        self.region = None
+        self.account_id = None

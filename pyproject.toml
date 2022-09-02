@@ -1,0 +1,19 @@
+[project]
+name = "findmyendpoints"
+version = "0.5"
+authors = [
+  { name="Jeff Maley", email="jeffmaley@gmail.com" },
+]
+description = "This tool will find and display information about public endpoints in an AWS account"
+readme = "README.md"
+license = { file="LICENSE" }
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/jeffmaley/findmyendpoints"
+"Bug Tracker" = "https://github.com/jeffmaley/findmyendpoints/issues"
