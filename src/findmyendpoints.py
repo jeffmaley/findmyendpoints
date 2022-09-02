@@ -219,10 +219,11 @@ def process_network_interfaces(boto3_session: boto3.Session,
                                     boto3_session,
                                     "ec2",
                                     region)
-                (instance_info, owner_id) = get_network_interface_attachment(
+                instance_info = get_network_interface_attachment(
                                     ec2_resource,
                                     nic.id)
-                if not re.match("amazon-aws|amazon-rds|amazon-redshift", owner_id):
+                if not re.match("amazon-aws|amazon-rds|amazon-redshift|amazon-elb",
+                                instance_info.get("InstanceOwnerId")):
                     nic.instance_id = instance_info.get("InstanceId")
                     instance_tag_info = get_instance_name(
                                             ec2_client,
@@ -230,7 +231,7 @@ def process_network_interfaces(boto3_session: boto3.Session,
                     instance_tags = instance_tag_info.get("Tags")
                     nic.instance_name = instance_tags[0].get("Value")
                 else:
-                    nic.instance_name = owner_id
+                    nic.instance_name = instance_info.get("InstanceOwnerId")
                 nic.account_id = account_id
                 yield nic
 
@@ -295,7 +296,7 @@ def get_network_interface_attachment(resource, id: str) -> list:
     """
 
     network_interface = resource.NetworkInterface(id)
-    return (network_interface.attachment, network_interface.owner_id)
+    return network_interface.attachment
 
 
 def get_instance_name(client, instance_id: str) -> dict:
