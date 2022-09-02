@@ -12,7 +12,7 @@ This tool will find and display information about public endpoints in an AWS
 
 ## Installation
 
-pip instal findmyendpoints
+pip install findmyendpoints
 
 ## Usage
 
