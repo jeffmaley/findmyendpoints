@@ -16,7 +16,8 @@ pip instal findmyendpoints
 
 ## Usage
 
-findmyendpoints [-h]
+python -m findmyendpoints [-h]
+python3 -m findmyendpoints [-h]
 
 ## TODO
 
