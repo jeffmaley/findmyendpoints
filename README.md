@@ -20,4 +20,5 @@ findmyendpoints [-h]
 
 ## TODO
 
+* Add support for getting information on RDS and Redshift endpoints
 * Add support for reading Security Group/NACLs
