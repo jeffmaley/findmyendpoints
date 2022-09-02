@@ -6,6 +6,10 @@ This tool will find and display information about public endpoints in an AWS
  account. Its focus is in Elastic Network Interfaces (ENIs), which can be
  attached resources like EC2 instances and RDS DB instances.
 
+ For AWS Organizations, this tool will use the OrganizationAccountAccessRole or
+ AWSControlTowerExecution role to process member accounts and it must be run from
+ the Management account.
+
 ## Installation
 
 pip instal findmyendpoints
@@ -16,5 +20,4 @@ findmyendpoints [-h]
 
 ## TODO
 
-* Add support for Organizations/Control Tower
 * Add support for reading Security Group/NACLs

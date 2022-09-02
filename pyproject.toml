@@ -1,6 +1,6 @@
 [project]
 name = "findmyendpoints"
-version = "0.0.1"
+version = "0.5"
 authors = [
   { name="Jeff Maley", email="jeffmaley@gmail.com" },
 ]
