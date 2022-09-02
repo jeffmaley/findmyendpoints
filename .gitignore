@@ -1,3 +1,7 @@
 .venv
 dist
-*__pycache__*
+models/__pycache__
+SOURCES.txt
+PKG-INFO
+*.csv
+*.log
