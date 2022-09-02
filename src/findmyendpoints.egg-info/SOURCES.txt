@@ -1,0 +1,10 @@
+LICENSE
+README.md
+pyproject.toml
+src/findmyendpoints.py
+src/findmyendpoints.egg-info/PKG-INFO
+src/findmyendpoints.egg-info/SOURCES.txt
+src/findmyendpoints.egg-info/dependency_links.txt
+src/findmyendpoints.egg-info/top_level.txt
+src/models/NetworkInterface/NetworkInterface.py
+src/models/NetworkInterface/__init__.py

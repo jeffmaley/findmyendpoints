@@ -17,3 +17,4 @@ findmyendpoints [-h]
 ## TODO
 
 * Add support for Organizations/Control Tower
+* Add support for reading Security Group/NACLs

@@ -7,33 +7,46 @@ endpoints in AWS. Its focus is on Elastic Network Interfaces (ENIs).
 """
 
 import boto3
+import botocore
+import argparse
 
-from models.NetworkInterface import NetworkInterface
+from models import NetworkInterface
+from models import bcolors
 
-def get_boto3_session(region):
+
+def get_boto3_session(region: str,
+            aws_access_key_id=None,
+            aws_secret_access_key=None,
+            aws_session_token=None) -> boto3.Session:
     """
     Return a boto3 session for the specified region
-    
+
     Inputs:
         region = string
-        
-        
+        aws_access_key_id = string
+        aws_secret_access_key = string
+        aws_session_token = string
+
     Returns:
-        boto3 session 
+        boto3 session
     """
 
-    boto3_session = boto3.session.Session(region_name=region)
+    boto3_session = boto3.session.Session(region_name=region,
+            aws_access_key_id=aws_access_key_id,
+            aws_secret_access_key=aws_secret_access_key,
+            aws_session_token=aws_session_token)
     return boto3_session
 
-def get_boto3_client(session, service, region):
+
+def get_boto3_client(session: str, service: str, region: str):
     """
     Return a boto3 client for the specified service in the specified region
-    
+
     Inputs:
         service = string
         region = string
-        
-        
+
+
     Returns:
         boto3 client object
     """
@@ -41,15 +54,17 @@ def get_boto3_client(session, service, region):
     boto3_client = session.client(service, region_name=region)
     return boto3_client
 
-def get_boto3_resource(session, service, region):
+
+def get_boto3_resource(session: boto3.Session, service: str, region: str):
     """
     Return a boto3 resource for the specified service in the specified region
-    
+
     Inputs:
+        session = boto3 session
         service = string
         region = string
-        
-        
+
+
     Returns:
         boto3 resource object
     """
@@ -57,13 +72,28 @@ def get_boto3_resource(session, service, region):
     boto3_resource = session.resource(service, region_name=region)
     return boto3_resource
 
+def parse_arguments() -> dict:
+    parser = argparse.ArgumentParser(description="Find public endpoinds in AWS")
+    parser.add_argument("--console", action="store_const", const=True)
+    parser.add_argument("--csv", action="store_const", const=True)
+    parser.add_argument("--organization", action="store_const", const=True,
+                help="Check all accounts in an Organization")
+    parser.add_argument("--controltower", action="store_const", const=True,
+                help="Use AWSControlExecution as destination role name")
+    parser.add_argument("--rolename", default="OrganizationAccountAccessRole",
+                help="Name of the role to assume in Organization accounts")
+    parser.add_argument("--default-region",
+                help="Default region for role assumption. Default is us-east-1.")
+    return parser.parse_args()
+
+
 def get_regions() -> list:
     """
     Returns of AWS regions
-    
+
     Inputs:
         None
-    
+
     Returns:
         [
             {
@@ -75,17 +105,108 @@ def get_regions() -> list:
     """
 
     ec2 = boto3.client("ec2")
-    return ec2.describe_regions(
+    regions_raw = ec2.describe_regions(
         AllRegions=False
     )["Regions"]
+    regions = []
+    for i in regions_raw:
+        regions.append(i.get("RegionName"))
+    return regions
 
-def iter_network_interfaces(session, region) -> list:
+
+def process_accounts(regions: str, account_id: str, credentials=None, default_region=None) -> dict:
     """
-    Returns elastic network interfaces in a region
+    Wrapper for processing accounts
     
     Inputs:
-        session = boto3 session object
+        regions = list
+        account_id = string
+        credentials = dict
+        default_region = string
+        
+    Returns:
+        {
+            region: [
+                NetworkInterface, 
+                ...
+                ]
+        }
+    """
+    network_interfaces = {}
+    if credentials is not None:
+        boto3_session = get_boto3_session(default_region,
+                aws_access_key_id=credentials.get("AccessKeyId"),
+                aws_secret_access_key=credentials.get("SecretAccessKey"),
+                aws_session_token=credentials.get("SessionToken"))
+    else:
+        boto3_session = get_boto3_session(default_region)                                
+    ec2_client = get_boto3_client(boto3_session, "ec2",
+                                    default_region)
+    for region in regions:
+        for nic in process_network_interfaces(boto3_session, ec2_client, region, account_id):
+            if not network_interfaces.get(nic.region):
+                network_interfaces[nic.region] = [nic]
+            else:
+                network_interfaces[nic.region].append(nic)
+    return network_interfaces
+
+
+def process_network_interfaces(boto3_session: boto3.Session, ec2_client, region: str, account_id: str):
+    """
+    Wrapper for network interface processing
+    
+    Inputs:
+        boto3_session = boto3 Session
+        ec2_client = boto3 ec2 client
         region = string
+        account_id = str
+
+    Returns:
+        yields NetworkInterface
+    """
+
+    for network_interface in iter_network_interfaces(
+                                    ec2_client):
+        nic = NetworkInterface.NetworkInterface(
+                                id=network_interface
+                                .get("NetworkInterfaceId"))
+        if network_interface.get("Association") is not None:
+            nic.public_ip = network_interface \
+                                .get("Association").get("PublicIp")
+            nic.public_dns = network_interface \
+                                .get("Association") \
+                                .get("PublicDnsName")
+            nic.association_id = network_interface \
+                                    .get("Association") \
+                                    .get("AssociationId")
+            nic.allocation_id = network_interface \
+                                .get("Association") \
+                                .get("AllocationId")
+            nic.region = region
+            if nic.public_ip:
+                ec2_resource = get_boto3_resource(
+                                    boto3_session,
+                                    "ec2",
+                                    region)
+                instance_info = get_network_interface_attachment(
+                                    ec2_resource,
+                                    nic.id)
+                nic.instance_id = instance_info.get("InstanceId")
+                instance_tag_info = get_instance_name(
+                                        ec2_client,
+                                        nic.instance_id)
+                instance_tags = instance_tag_info.get("Tags")
+                nic.instance_name = instance_tags[0].get("Value")
+                nic.account_id = account_id
+                yield nic
+
+
+def iter_network_interfaces(ec2_client) -> list:
+    """
+    Returns elastic network interfaces in a region
+
+    Inputs:
+        session = boto3 session object
 
     Returns:
     [
@@ -104,16 +225,15 @@ def iter_network_interfaces(session, region) -> list:
 },
     ]
 
-
     """
 
     next_token = "X"
     network_interfaces = []
     while next_token is not None:
         if next_token == "X":
-            response = session.describe_network_interfaces()
+            response = ec2_client.describe_network_interfaces()
         else:
-            response = session.describe_network_interace(
+            response = ec2_client.describe_network_interace(
                 NextToken=next_token
             )
         next_token = response.get("NextToken")
@@ -122,10 +242,11 @@ def iter_network_interfaces(session, region) -> list:
     for network_interface in network_interfaces:
         yield network_interface
 
-def get_network_interface_attachment(resource, id) -> list:
+
+def get_network_interface_attachment(resource, id: str) -> list:
     """
     Returns attachment information for a boto3 NetworkInterface
-    
+
     Inputs:
         resource = boto3 resource object
         id = string
@@ -136,21 +257,21 @@ def get_network_interface_attachment(resource, id) -> list:
             "InstanceId": instance_id,
             ...,
         ]
-    
+
     """
 
     network_interface = resource.NetworkInterface(id)
     return network_interface.attachment
 
-def get_instance_name(client, instance_id) -> dict:
+
+def get_instance_name(client, instance_id: str) -> dict:
     """
     Returns the Name tag for an instance
-    
-    
+
     Inputs:
         client = boto3 client
         instance_id = string
-        
+
     Returns:
         {
             'NextToken': 'string',
@@ -183,49 +304,155 @@ def get_instance_name(client, instance_id) -> dict:
         ]
     )
 
+
+def get_organization_accounts():
+    """
+    Returns list of accounts in the AWS Organization
+    
+    Inputs:
+        None
+        
+    Returns:
+        list of string
+    """
+    org_client = boto3.client("organizations", "us-east-1")
+    accounts = []
+    response = org_client.list_accounts().get("Accounts")
+    for account in response:
+        accounts.append(account.get("Id"))
+    management_account = org_client.describe_organization() \
+                .get("Organization") \
+                .get("MasterAccountId")
+    return (accounts, management_account)
+
+
+def assume_role_in_org_account(session: boto3.Session, region: str, account_id: str, role_name: str):
+    """
+    Returns a boto3 session in the destination account
+    
+    Inputs:
+        session = boto3 session
+        region = str
+        account_id=  str
+        role_name = str
+        
+    Returns:
+        boto3 session object
+    """
+    sts_client = get_boto3_client(session, "sts", region)
+    response = sts_client.assume_role(
+        RoleArn="arn:aws:iam::{}:role/{}"
+        .format(account_id, role_name),
+        RoleSessionName="FindMyEndpoints"
+    )
+    credentials = {}
+    credentials["AccessKeyId"] = response \
+                        .get("Credentials") \
+                        .get("AccessKeyId")
+    credentials["SecretAccessKey"] = response \
+                        .get("Credentials") \
+                        .get("SecretAccessKey")
+    credentials["SessionToken"] = response \
+                        .get("Credentials") \
+                        .get("SessionToken")
+    return credentials
+
+
 def output_console(network_interfaces):
     """
     Displays final output to a console
-    
+
     Inputs:
         network_interfaces = list of NetworkInterface
 
     Returns:
         None
     """
-    print("Network Interface Id\tInstance Id\t\tInstance Name\tPublic Ip\tPublic DNS\t")
-    for i in network_interfaces:
-        print("{}\t{}\t{}\t{}\t{}".format(i.id, i.instance_id, i.instance_name, i.public_ip, i.public_dns))
 
+    for account_id in network_interfaces.keys():
+        print("{}\n\n{}{}".format(bcolors.bcolors.BLUE, account_id, bcolors.bcolors.DEFAULT))
+        for region in network_interfaces.get(account_id).keys():
+            if len(network_interfaces.get(account_id).get(region)) > 0:
+                for i in network_interfaces.get(account_id).get(region):
+                    print("{}\n{}{}".format(bcolors.bcolors.YELLOW, region, bcolors.bcolors.DEFAULT))
+                    print("{}Network Interface Id\tInstance Id\t\tInstance Name\tPublic Ip\tPublic DNS{}"
+                            .format(bcolors.bcolors.LIGHTGRAY,
+                            bcolors.bcolors.DEFAULT))            
+                    if i.region == region:
+                        print("{}\t{}\t{}\t{}\t{}".format(
+                            i.id,
+                            i.instance_id,
+                            i.instance_name,
+                            i.public_ip,
+                            i.public_dns))
+
+
+def output_csv(network_interfaces):
+    """
+    Writes output to a csv
+    
+    Inputs:
+        network_interfaces = list of NetworkInterface
+        
+    Returns:
+        None
+    """
+    f = open("FindMyEndpoints_output.csv", "w")
+    f.write("Account Id,Network Interface Id,Instance Id,Instance Name,Public Ip,Public DNS,Region\n")
+    for account_id in network_interfaces.keys():
+        for region in network_interfaces.get(account_id).keys():
+            if len(network_interfaces.get(account_id).get(region)) > 0:
+                for i in network_interfaces.get(account_id).get(region):          
+                    if i.region == region:
+                        f.write("{},{},{},{},{},{},{}\n".format(
+                            account_id,
+                            i.id,
+                            i.instance_id,
+                            i.instance_name,
+                            i.public_ip,
+                            i.public_dns,
+                            i.region))
+    f.close()
+
+    
 def main():
     """
     Main entry point
     """
-    
-    network_interfaces = []
+    args = parse_arguments()
     regions = []
     regions = get_regions()
-    for region in regions:
-        boto3_session = get_boto3_session(region.get("RegionName"))
-        print("Processing {}...".format(region.get("RegionName")))
-        ec2_client = get_boto3_client(boto3_session, "ec2", region.get("RegionName"))
-        for network_interface in iter_network_interfaces(ec2_client, region["RegionName"]):
-            nic = NetworkInterface.NetworkInterface(id=network_interface.get("NetworkInterfaceId"))
-            if network_interface.get("Association") is not None:
-                nic.public_ip = network_interface.get("Association").get("PublicIp")
-                nic.public_dns = network_interface.get("Association").get("PublicDnsName")
-                nic.association_id = network_interface.get("Association").get("AssociationId")
-                nic.allocation_id = network_interface.get("Association").get("AllocationId")
-                if nic.public_ip:
-                    ec2_resource = get_boto3_resource(boto3_session, "ec2", region.get("RegionName"))
-                    instance_info = get_network_interface_attachment(ec2_resource, nic.id)
-                    nic.instance_id = instance_info.get("InstanceId")
-                    instance_tag_info = get_instance_name(ec2_client, nic.instance_id)
-                    instance_tags = instance_tag_info.get("Tags")
-                    nic.instance_name = instance_tags[0].get("Value")
-                    network_interfaces.append(nic)
-    output_console(network_interfaces)
+    accounts = []
+    if vars(args).get("default-region"):
+        default_region = vars(args).get("default-region")
+    else:
+        default_region = "us-east-1"
+    if vars(args).get("organization"):
+        (accounts, management_account) = get_organization_accounts()
+        if vars(args).get("controltower"):
+            role_name = "AWSControlTowerExecution"
+        else:
+            role_name = vars(args).get("rolename")
+    network_interfaces = {}
+    if len(accounts) > 0:
+        for account_id in accounts:
+            if account_id != management_account:
+                mgmt_account_session = get_boto3_session("us-east-1")
+                credentials = assume_role_in_org_account(mgmt_account_session,
+                                    "us-east-1", account_id, role_name)
+                network_interfaces[account_id] = process_accounts(regions, account_id, credentials=credentials, default_region=default_region)
+            else:
+                network_interfaces[account_id] = process_accounts(regions, account_id)
+    else:
+        sts_client = boto3.client("sts")
+        account_id = sts_client.get_caller_identity().get("Account")
+        network_interfaces[account_id] = process_accounts(regions)
+    if vars(args).get("console"):        
+        output_console(network_interfaces, regions)
+    if vars(args).get("csv"):
+        output_csv(network_interfaces)        
     return
+
 
 if __name__ == "__main__":
     main()
