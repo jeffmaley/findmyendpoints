@@ -232,6 +232,7 @@ def process_network_interfaces(boto3_session: boto3.Session,
                     nic.instance_name = instance_tags[0].get("Value")
                 else:
                     nic.instance_name = instance_info.get("InstanceOwnerId")
+                    nic.instance_id = instance_info.get("InstanceOwnerId")
                 nic.account_id = account_id
                 yield nic
 
@@ -417,10 +418,10 @@ def output_console(network_interfaces):
                                   bcolors.bcolors.DEFAULT))
         for region in network_interfaces.get(account_id).keys():
             if len(network_interfaces.get(account_id).get(region)) > 0:
+                print("{}\n{}{}".format(bcolors.bcolors.YELLOW,
+                                        region,
+                                        bcolors.bcolors.DEFAULT))                
                 for i in network_interfaces.get(account_id).get(region):
-                    print("{}\n{}{}".format(bcolors.bcolors.YELLOW,
-                                            region,
-                                            bcolors.bcolors.DEFAULT))
                     print("{}Network Interface Id\tInstance Id\t\tInstance Name\tPublic Ip\tPublic DNS{}"  # noqa: E501
                           .format(bcolors.bcolors.LIGHTGRAY,
                           bcolors.bcolors.DEFAULT))
