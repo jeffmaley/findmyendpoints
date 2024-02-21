@@ -197,7 +197,7 @@ def process_network_interfaces(boto3_session: boto3.Session,
     """
 
     for network_interface in iter_network_interfaces(
-                                    ec2_client):
+                                    ec2_client, region):
         nic = NetworkInterface.NetworkInterface(
                                 id=network_interface
                                 .get("NetworkInterfaceId"))
@@ -237,7 +237,7 @@ def process_network_interfaces(boto3_session: boto3.Session,
                 yield nic
 
 
-def iter_network_interfaces(ec2_client) -> list:
+def iter_network_interfaces(ec2_client, region: str) -> list:
     """
     Returns elastic network interfaces in a region
 
@@ -265,16 +265,20 @@ def iter_network_interfaces(ec2_client) -> list:
 
     next_token = "X"
     network_interfaces = []
-    while next_token is not None:
-        if next_token == "X":
-            response = ec2_client.describe_network_interfaces()
-        else:
-            response = ec2_client.describe_network_interace(
-                NextToken=next_token
-            )
-        next_token = response.get("NextToken")
-        for i in response.get("NetworkInterfaces"):
-            network_interfaces.append(i)
+    try:
+        while next_token is not None:
+            if next_token == "X":
+                response = ec2_client.describe_network_interfaces()
+            else:
+                response = ec2_client.describe_network_interace(
+                    NextToken=next_token
+                )
+            next_token = response.get("NextToken")
+            for i in response.get("NetworkInterfaces"):
+                network_interfaces.append(i)
+    except Exception as e:
+        logging.error(f"Unable to retrieve network interfaces for region {region}")
+        logging.error(e)
     for network_interface in network_interfaces:
         yield network_interface
 
